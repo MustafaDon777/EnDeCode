@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Encoder/Decoder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #1a202c;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+    <div class="bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-md text-gray-200">
+        <h1 class="text-2xl font-bold text-center mb-6 text-gray-100">Advanced Text Encoder/Decoder</h1>
+        
+        <!-- Seed Input -->
+        <div class="mb-4">
+            <label for="seedInput" class="block text-sm font-medium text-gray-300">Encryption Seed (Key)</label>
+            <input id="seedInput" type="text" class="mt-1 p-2 w-full bg-gray-700 border border-gray-600 rounded-md text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter a seed (at least 16 characters)" />
+        </div>
+
+        <!-- Input Section -->
+        <div class="mb-4">
+            <label for="inputText" class="block text-sm font-medium text-gray-300">Enter Text</label>
+            <textarea id="inputText" class="mt-1 p-2 w-full bg-gray-700 border border-gray-600 rounded-md text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500" rows="4" placeholder="Type your message here..."></textarea>
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex justify-between mb-4">
+            <button onclick="encodeText()" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Encrypt</button>
+            <button onclick="decodeText()" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500">Decrypt</button>
+        </div>
+
+        <!-- Output Section -->
+        <div class="mb-4">
+            <label for="outputText" class="block text-sm font-medium text-gray-300">Result</label>
+            <textarea id="outputText" class="mt-1 p-2 w-full bg-gray-700 border border-gray-600 rounded-md text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500" rows="4" readonly></textarea>
+        </div>
+
+        <!-- Copy Button -->
+        <button onclick="copyToClipboard()" class="w-full bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500">Copy Result</button>
+    </div>
+
+    <script>
+        async function deriveKey(seed) {
+            const encoder = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey(
+                "raw",
+                encoder.encode(seed),
+                { name: "PBKDF2" },
+                false,
+                ["deriveBits", "deriveKey"]
+            );
+            return crypto.subtle.deriveKey(
+                {
+                    name: "PBKDF2",
+                    salt: encoder.encode("salt"),
+                    iterations: 100000,
+                    hash: "SHA-256"
+                },
+                keyMaterial,
+                { name: "AES-GCM", length: 256 },
+                true,
+                ["encrypt", "decrypt"]
+            );
+        }
+
+        async function encodeText() {
+            const input = document.getElementById('inputText').value;
+            const seed = document.getElementById('seedInput').value;
+            if (!input) {
+                alert('Please enter some text to encrypt.');
+                return;
+            }
+            if (seed.length < 16) {
+                alert('Seed must be at least 16 characters long.');
+                return;
+            }
+            try {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(input);
+                const key = await deriveKey(seed);
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                const encrypted = await crypto.subtle.encrypt(
+                    { name: "AES-GCM", iv: iv },
+                    key,
+                    data
+                );
+                const encryptedArray = new Uint8Array(encrypted);
+                const combined = new Uint8Array(iv.length + encryptedArray.length);
+                combined.set(iv);
+                combined.set(encryptedArray, iv.length);
+                const encoded = btoa(String.fromCharCode(...combined));
+                document.getElementById('outputText').value = encoded;
+            } catch (e) {
+                alert('Encryption failed: ' + e.message);
+            }
+        }
+
+        async function decodeText() {
+            const input = document.getElementById('inputText').value;
+            const seed = document.getElementById('seedInput').value;
+            if (!input) {
+                alert('Please enter some text to decrypt.');
+                return;
+            }
+            if (seed.length < 16) {
+                alert('Seed must be at least 16 characters long.');
+                return;
+            }
+            try {
+                const decoded = atob(input);
+                const combined = Uint8Array.from(decoded, c => c.charCodeAt(0));
+                const iv = combined.slice(0, 12);
+                const encrypted = combined.slice(12);
+                const key = await deriveKey(seed);
+                const decrypted = await crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: iv },
+                    key,
+                    encrypted
+                );
+                const decoder = new TextDecoder();
+                document.getElementById('outputText').value = decoder.decode(decrypted);
+            } catch (e) {
+                alert('Decryption failed: Ensure the input is valid and the seed is correct.');
+            }
+        }
+
+        function copyToClipboard() {
+            const output = document.getElementById('outputText');
+            if (!output.value) {
+                alert('Nothing to copy. Please encrypt or decrypt some text first.');
+                return;
+            }
+            output.select();
+            document.execCommand('copy');
+            alert('Result copied to clipboard!');
+        }
+    </script>
+</body>
+</html>
